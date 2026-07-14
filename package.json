@@ -7,7 +7,7 @@
     "dev": "vercel dev"
   },
   "dependencies": {
-    "@vercel/blob": "^0.23.4",
+    "@vercel/blob": "^0.26.0",
     "uuid": "^9.0.1"
   },
   "engines": {
