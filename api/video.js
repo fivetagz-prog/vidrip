@@ -1,19 +1,25 @@
-const { kv } = require('@vercel/kv');
+const { list } = require('@vercel/blob');
 
 module.exports = async (req, res) => {
   const { id } = req.query;
   if (!id) return res.status(400).send('Missing video ID');
 
   try {
-    const raw = await kv.get(`video:${id}`);
-    if (!raw) return res.status(404).send('Video not found or expired');
-    
-    const meta = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    const { blobs } = await list({
+      prefix: `videos/${id}`,
+      token: process.env.BLOB_READ_WRITE_TOKEN,
+      limit: 10
+    });
+
+    const videoBlob = blobs.find(b => b.pathname.startsWith(`videos/${id}`));
+    if (!videoBlob) return res.status(404).send('Video not found');
+
     const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
     const shareUrl = `${baseUrl}/v/${id}`;
     const embedUrl = `${baseUrl}/embed/${id}`;
-    const videoUrl = meta.url;
-    const title = meta.title || 'Video on VidRip';
+    const videoUrl = videoBlob.url;
+    const title = videoBlob.pathname.replace('videos/', '').replace(/\.[^.]+$/, '');
+    const mimeType = videoBlob.contentType || 'video/mp4';
 
     res.setHeader('Content-Type', 'text/html');
     res.status(200).send(`<!DOCTYPE html>
@@ -27,11 +33,10 @@ module.exports = async (req, res) => {
   <meta property="og:title" content="${title}">
   <meta property="og:description" content="Watch this video on VidRip">
   <meta property="og:video" content="${videoUrl}">
-  <meta property="og:video:type" content="${meta.type || 'video/mp4'}">
+  <meta property="og:video:type" content="${mimeType}">
   <meta property="og:video:width" content="1280">
   <meta property="og:video:height" content="720">
   <meta property="twitter:card" content="player">
-  <meta property="twitter:site" content="@vidrip">
   <meta property="twitter:title" content="${title}">
   <meta property="twitter:player" content="${embedUrl}">
   <meta property="twitter:player:width" content="1280">
@@ -69,7 +74,7 @@ module.exports = async (req, res) => {
   </a>
   <div class="player-container animate-in">
     <video controls autoplay playsinline>
-      <source src="${videoUrl}" type="${meta.type || 'video/mp4'}">
+      <source src="${videoUrl}" type="${mimeType}">
       Your browser does not support the video tag.
     </video>
     <div class="info">
