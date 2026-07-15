@@ -108,24 +108,26 @@
     <div class="footer">Built with ❤️ for creators · <a href="https://github.com" target="_blank">Open Source</a></div>
   </div>
   
-  <script>
-    const dropZone=document.getElementById('dropZone');
-    const fileInput=document.getElementById('fileInput');
-    const chooseBtn=document.getElementById('chooseBtn');
-    const errorMsg=document.getElementById('errorMsg');
-    const progressWrap=document.getElementById('progressWrap');
-    const progressBar=document.getElementById('progressBar');
-    const progressPercent=document.getElementById('progressPercent');
-    const progressStatus=document.getElementById('progressStatus');
-    const resultCard=document.getElementById('resultCard');
-    const previewVideo=document.getElementById('previewVideo');
+  <script type="module">
+    import { upload } from 'https://esm.sh/@vercel/blob@0.26.0/client';
     
-    chooseBtn.addEventListener('click',()=>fileInput.click());
-    ['dragenter','dragover','dragleave','drop'].forEach(e=>{dropZone.addEventListener(e,ev=>{ev.preventDefault();ev.stopPropagation()})});
-    ['dragenter','dragover'].forEach(e=>dropZone.addEventListener(e,()=>dropZone.classList.add('dragover')));
-    ['dragleave','drop'].forEach(e=>dropZone.addEventListener(e,()=>dropZone.classList.remove('dragover')));
-    dropZone.addEventListener('drop',e=>{if(e.dataTransfer.files.length)handleFile(e.dataTransfer.files[0])});
-    fileInput.addEventListener('change',e=>{if(e.target.files.length)handleFile(e.target.files[0])});
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const chooseBtn = document.getElementById('chooseBtn');
+    const errorMsg = document.getElementById('errorMsg');
+    const progressWrap = document.getElementById('progressWrap');
+    const progressBar = document.getElementById('progressBar');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressStatus = document.getElementById('progressStatus');
+    const resultCard = document.getElementById('resultCard');
+    const previewVideo = document.getElementById('previewVideo');
+    
+    chooseBtn.addEventListener('click', () => fileInput.click());
+    ['dragenter','dragover','dragleave','drop'].forEach(e => {dropZone.addEventListener(e, ev => {ev.preventDefault();ev.stopPropagation()})});
+    ['dragenter','dragover'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.add('dragover')));
+    ['dragleave','drop'].forEach(e => dropZone.addEventListener(e, () => dropZone.classList.remove('dragover')));
+    dropZone.addEventListener('drop', e => {if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0])});
+    fileInput.addEventListener('change', e => {if(e.target.files.length) handleFile(e.target.files[0])});
     
     function formatBytes(bytes){if(bytes===0)return'0 B';const k=1024;const sizes=['B','KB','MB','GB'];const i=Math.floor(Math.log(bytes)/Math.log(k));return parseFloat((bytes/Math.pow(k,i)).toFixed(1))+' '+sizes[i]}
     function formatSpeed(bps){if(bps===0)return'';return formatBytes(bps)+'/s'}
@@ -150,63 +152,38 @@
       
       const id=crypto.randomUUID?crypto.randomUUID().replace(/-/g,'').substring(0,12):Math.random().toString(36).substring(2,14);
       const ext=file.name.split('.').pop().toLowerCase();
+      const pathname=`videos/${id}.${ext}`;
+      const baseUrl=location.origin;
+      const startTime=Date.now();
       
       try{
-        // Step 1: Get upload token from server
-        progressStatus.textContent='Requesting upload token...';
-        const tokenRes=await fetch('/api/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,filename:file.name})});
-        if(!tokenRes.ok){const err=await tokenRes.json().catch(()=>({}));throw new Error(err.error||'Failed to get upload token')}
-        const {token,pathname}=await tokenRes.json();
-        
-        // Step 2: Upload directly to Vercel Blob (REAL progress)
-        const xhr=new XMLHttpRequest();
-        const blobUrl=`https://blob.vercel-storage.com/${pathname}`;
-        
-        const uploadPromise=new Promise((resolve,reject)=>{
-          const startTime=Date.now();
-          
-          xhr.upload.addEventListener('progress',e=>{
-            if(e.lengthComputable){
-              const percent=Math.round((e.loaded/e.total)*100);
-              progressBar.style.width=percent+'%';
-              progressPercent.textContent=percent+'%';
-              const elapsed=(Date.now()-startTime)/1000;
-              const speed=elapsed>0?e.loaded/elapsed:0;
-              progressStatus.textContent=`Uploading... ${formatSpeed(speed)}`;
+        const blob = await upload(pathname, file, {
+          access: 'public',
+          handleUploadUrl: '/api/upload',
+          clientPayload: JSON.stringify({id, filename: file.name}),
+          onUploadProgress: (progress) => {
+            const percent = Math.round(progress.percentage);
+            progressBar.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+            if (progress.loaded) {
+              const elapsed = (Date.now() - startTime) / 1000;
+              const speed = elapsed > 0 ? progress.loaded / elapsed : 0;
+              progressStatus.textContent = `Uploading... ${formatSpeed(speed)}`;
             }
-          });
-          
-          xhr.addEventListener('load',()=>{
-            if(xhr.status>=200&&xhr.status<300){
-              try{resolve(JSON.parse(xhr.responseText))}catch(e){reject(new Error('Invalid blob response'))}
-            }else{reject(new Error('Blob upload failed: '+xhr.status))}
-          });
-          xhr.addEventListener('error',()=>reject(new Error('Network error during upload')));
-          xhr.addEventListener('abort',()=>reject(new Error('Upload aborted')));
-          
-          xhr.open('PUT',blobUrl);
-          xhr.setRequestHeader('x-vercel-blob-token',token);
-          xhr.setRequestHeader('x-vercel-blob-content-type',file.type||'video/mp4');
-          xhr.send(file);
+          }
         });
         
-        progressStatus.textContent='Uploading...';
-        const blob=await uploadPromise;
+        progressBar.style.width = '100%';
+        progressPercent.textContent = '100%';
+        progressStatus.textContent = 'Processing...';
         
-        // Step 3: Save metadata
-        progressBar.style.width='100%';
-        progressPercent.textContent='100%';
-        progressStatus.textContent='Saving metadata...';
-        
-        const baseUrl=location.origin;
-        const saveRes=await fetch('/api/save',{
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({id,url:blob.url,title:file.name,type:file.type||'video/mp4'})
+        const saveRes = await fetch('/api/save', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({id, url: blob.url, title: file.name, type: file.type || 'video/mp4'})
         });
         if(!saveRes.ok){const err=await saveRes.json().catch(()=>({}));throw new Error(err.error||'Failed to save metadata')}
         
-        // Done
         progressWrap.style.display='none';
         chooseBtn.disabled=false;
         chooseBtn.textContent='Choose File';
