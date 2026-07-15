@@ -5,25 +5,21 @@ module.exports = async (req, res) => {
   if (!id) return res.status(400).send('Missing video ID');
 
   try {
-    const { blobs: metaBlobs } = await list({
-      prefix: `meta/${id}`,
+    const { blobs } = await list({
+      prefix: `videos/${id}`,
       token: process.env.BLOB_READ_WRITE_TOKEN,
       limit: 10
     });
-    
-    const metaBlob = metaBlobs.find(b => b.pathname === `meta/${id}.json`);
-    if (!metaBlob) return res.status(404).send('Video not found or expired');
-    
-    const metaRes = await fetch(metaBlob.url);
-    if (!metaRes.ok) throw new Error('Failed to fetch metadata');
-    const meta = await metaRes.json();
-    
+
+    const videoBlob = blobs.find(b => b.pathname.startsWith(`videos/${id}`));
+    if (!videoBlob) return res.status(404).send('Video not found or expired');
+
     const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
     const shareUrl = `${baseUrl}/v/${id}`;
     const embedUrl = `${baseUrl}/embed/${id}`;
-    const videoUrl = meta.url;
-    const title = meta.title || 'Video on VidRip';
-    const mimeType = meta.type || 'video/mp4';
+    const videoUrl = videoBlob.url;
+    const title = videoBlob.pathname.replace('videos/', '').replace(/\.[^.]+$/, '');
+    const mimeType = videoBlob.contentType || 'video/mp4';
 
     res.setHeader('Content-Type', 'text/html');
     res.status(200).send(`<!DOCTYPE html>
